@@ -29,7 +29,10 @@ BGP_MESSAGE_MARKER = b'\xff' * 16
 class BGPMessage:
     """The BGPMessage class provides an abstract view of a BGP message, given a collection of bytes.  It
     also handles rendering a message back to a collection of bytes, through the ``encode()`` function.  Messages
-    are decoded via the ``decode()`` function."""
+    are decoded via the ``decode()`` function.
+
+    To implement a message, one should subclass the BGPMessage class and subclass the ``encode()`` and ``decode()``
+    methods."""
     __messagetype__ = BGP_MESSAGE_NIL
     def __init__(self):
         self.length = BGP_MESSAGE_HEADERLEN
@@ -46,7 +49,7 @@ class BGPMessage:
 
     @staticmethod
     def decode_header(data):
-        if len(data) < 19:
+        if len(data) < BGP_MESSAGE_HEADERLEN:
             return None
 
         length, msg_type = struct.unpack_from('!HB', data, offset=16)
@@ -54,7 +57,7 @@ class BGPMessage:
 
     @classmethod
     def decode(cls, data):
-        if len(data) < 19:
+        if len(data) < BGP_MESSAGE_HEADERLEN:
             return None
 
         header = BGPMessage.decode_header(data)
@@ -86,12 +89,33 @@ class KeepAliveMessage(BGPMessage):
     __messagetype__ = BGP_MESSAGE_KEEPALIVE
 
 
-message_types = {
+bgp_message_types = {
     BGP_MESSAGE_OPEN: OpenMessage,
     BGP_MESSAGE_UPDATE: UpdateMessage,
     BGP_MESSAGE_NOTIFICATION: NotificationMessage,
     BGP_MESSAGE_KEEPALIVE: KeepAliveMessage
 }
+
+
+def bgp_read_message(data):
+    """Read in a message from a buffer.  If sufficient data is available, return a BGPMessage object
+    representing the message as well as the amount of data consumed as a tuple.  The caller should then
+    advance their buffer by the amount of data consumed.  Otherwise, it returns None plus the message data
+    that should be consumed."""
+    global bgp_message_types
+
+    if len(data) < BGP_MESSAGE_HEADERLEN:
+        return (None, 0)
+
+    header = BGPMessage.decode(data[0:BGP_MESSAGE_HEADERLEN])
+    if len(data) < header.length:
+        return (None, 0)
+
+    msgclass = bgp_message_types.get(header.msg_type, None)
+    if not msgclass:
+        return (None, header.length)
+
+    return (msgclass.decode(data[0:header.length]), header.length)
 
 
 if __name__ == '__main__':
